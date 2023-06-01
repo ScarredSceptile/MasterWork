@@ -374,7 +374,7 @@ namespace ReviewRanking.RankingResources
                     var rev = reviews.Where(n => n.Id == worseReview).First();
                     betRev.WorseReviews.Add(rev.Id);
                     newComparisons.Add(new RankingInfo { ReviewID = betRev.Id, OtherReviewID = rev.Id, Comparison = Values.Better });
-                    rev.WorseReviews.Add(betRev.Id);
+                    rev.BetterReviews.Add(betRev.Id);
                     newComparisons.Add(new RankingInfo { ReviewID = rev.Id, OtherReviewID = betRev.Id, Comparison = Values.Worse });
                 }
             }

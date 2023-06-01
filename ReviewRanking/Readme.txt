@@ -39,4 +39,4 @@ Reviews with the same Course and Grouping will be compared fully in the RankByGr
 
 Currently, the groupings are set to for each course to be approximately between 60 and 80 reviews, with some having less while some have more
 
-URL for current working build: https://studntnu-my.sharepoint.com/:u:/r/personal/jonaseha_ntnu_no/Documents/Attachments/ReviewRanking.rar?csf=1&web=1&e=qrTEM0
+Note: There used to be an url here for the version that was used during the thesis, but it was a private url.
