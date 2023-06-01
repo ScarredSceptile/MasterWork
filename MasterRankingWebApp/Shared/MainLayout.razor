@@ -1,0 +1,47 @@
+﻿@using MasterRankingWebApp.Data;
+@using Newtonsoft.Json;
+@using System.Text;
+@inherits LayoutComponentBase
+@inject User.UserContainer user
+@inject IHttpClientFactory ClientFactory
+@inject NavigationManager NavManager
+
+<PageTitle>MasterRankingWebApp</PageTitle>
+
+
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            @if (user.appdata.IsLoggedIn)
+            {
+                <button class ="btn btn-primary" @onclick="Logout">Logout</button>
+            }
+        </div>
+
+        <div class="content px-4">
+            @Body
+        </div>
+    </main>
+</div>
+
+@code {
+    private async void Logout()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://10.212.171.207:44315/api/Login/logout");
+
+        request.Content = new StringContent(JsonConvert.SerializeObject(user.appdata), Encoding.UTF8, "application/json");
+        var client = ClientFactory.CreateClient();
+        using var response = await client.SendAsync(request);
+
+        if (response.IsSuccessStatusCode)
+        {
+            user.appdata.IsLoggedIn = false;
+            NavManager.NavigateTo("/", true);
+        }
+    }
+}

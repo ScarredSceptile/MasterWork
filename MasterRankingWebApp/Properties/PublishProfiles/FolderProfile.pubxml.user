@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+https://go.microsoft.com/fwlink/?LinkID=208121.
+-->
+<Project>
+  <PropertyGroup>
+    <_PublishTargetUrl>E:\UniWork\RR\WebApp</_PublishTargetUrl>
+    <History>True|2023-05-05T12:17:54.4769905Z;True|2023-05-05T14:15:42.9616672+02:00;True|2023-05-05T14:11:59.3772023+02:00;True|2023-05-05T13:46:55.1802482+02:00;True|2023-05-05T13:29:51.4744892+02:00;True|2023-05-04T14:05:14.9185049+02:00;True|2023-05-04T13:32:10.8099116+02:00;True|2023-05-04T13:23:37.2654958+02:00;True|2023-05-04T13:22:14.9682937+02:00;True|2023-05-03T22:28:26.3273825+02:00;True|2023-05-03T19:35:47.3004784+02:00;True|2023-05-03T19:24:30.1401978+02:00;</History>
+    <LastFailureDetails />
+  </PropertyGroup>
+</Project>

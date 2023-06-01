@@ -1,0 +1,69 @@
+﻿@page "/"
+@using MasterRankingWebApp.Data;
+@using System.Text.Json;
+@using System.Text;
+@using Newtonsoft.Json;
+@inject User.UserContainer user
+@inject IHttpClientFactory ClientFactory
+
+<PageTitle>Index</PageTitle>
+
+@if (user.appdata.IsLoggedIn)
+{
+    if (!error)
+    {
+        if (!loaded)
+        {
+            <h4>Loading Courses</h4>
+        }
+        else
+        {
+            <h3>Please select which course you would like to rank for</h3>
+            <select @bind="user.appdata.SelectedCourse">
+                @foreach (var course in courses)
+                {
+                    <option value="@course.ID">@course.Description</option>
+                }
+            </select>
+            <p></p>
+            <a href="ranking">Start ranking</a>
+        }
+    }
+    else
+    {
+        <h3 style="color: red">Unable to load courses!</h3>
+    }
+}
+else
+{
+    <a href="login">Log in</a>
+    <p></p>
+    <a href="register">Register</a>
+}
+
+@code {
+    private List<Courses> courses;
+    private bool loaded = false;
+    private bool error = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (user.appdata.IsLoggedIn == false)
+            return;
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://10.212.171.207:44315/api/Ranking/courses");
+
+        request.Content = new StringContent(JsonConvert.SerializeObject(user.appdata), Encoding.UTF8, "application/json");
+        var client = ClientFactory.CreateClient();
+        using var response = await client.SendAsync(request);
+
+
+        if (response.IsSuccessStatusCode)
+        {
+            var responseStream = await response.Content.ReadAsStringAsync();
+            courses = JsonConvert.DeserializeObject<List<Courses>>(responseStream);
+            loaded = true;
+        }
+        else error = true;
+    }
+}

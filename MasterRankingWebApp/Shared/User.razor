@@ -1,0 +1,21 @@
+﻿@using MasterRankingWebApp.Data;
+<h3>User</h3>
+
+@code {
+    public class UserContainer
+    {
+        public Appdata appdata { get; set; } = new Appdata();
+        public event Action OnStateChange;
+        public void SetValue(Appdata value)
+        {
+            this.appdata = value;
+            NotifyStateChange();
+        }
+        public void SetCourse(int course)
+        {
+            this.appdata.SelectedCourse = course;
+            NotifyStateChange();
+        }
+        private void NotifyStateChange() => OnStateChange?.Invoke();
+    }
+}

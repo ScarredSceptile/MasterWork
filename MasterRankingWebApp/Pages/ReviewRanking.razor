@@ -1,0 +1,490 @@
+﻿@page "/ranking"
+@using MasterRankingWebApp.Data;
+@using System.Text.Json;
+@using System.Text;
+@using Newtonsoft.Json;
+@inject User.UserContainer user
+@inject IHttpClientFactory ClientFactory
+
+<PageTitle>Review Ranking</PageTitle>
+
+
+@if (Error != null)
+{
+    <h4>Unexpected error: @Error</h4>
+}
+else if (Finished)
+{
+    <h4>Ranking for selected course is complete.</h4>
+}
+else
+{
+    @if (user.appdata.IsLoggedIn)
+    {
+        <div class="row">
+            <div class="column">
+                <textarea class="tArea" readonly>@Left</textarea>
+            </div>
+            <div class="info">
+                <div>@Comparing</div>
+                <div>@CompareMethod</div>
+                <div>
+                    <button class="btn btn-primary" style="flex" disabled=@ChoiceMade @onclick="LeftChoice">></button>
+                    <button class="btn btn-primary" style="flex" disabled=@ChoiceMade @onclick="Equal">=</button>
+                    <button class="btn btn-primary" style="flex" disabled=@ChoiceMade @onclick="RightClick">&lt;</button>
+                </div>
+                <div>@MethodProgress</div>
+                <div>@GroupProgress</div>
+            </div>
+            <div class="column">
+                <textarea class="tArea" readonly>@Right</textarea>
+            </div>
+        </div>
+    }
+    else
+    {
+        <h4>You are required to be logged in to access this function</h4>
+        <a href="login">Log in</a>
+        <p></p>
+        <a href="register">Register</a>
+    }
+}
+
+@code {
+    private string Comparing = "";
+    private string CompareMethod = "";
+    private string MethodProgress = "";
+    private string GroupProgress = "";
+
+    private string Left = "Test";
+    private string Right = "Test";
+
+    private string? Error = null;
+
+    private List<TextReview> reviews = new();
+    private static Random rng = new Random();
+    private string? Choice = null;
+    private bool ChoiceMade = false;
+
+    private bool Finished = false;
+
+    private void LeftChoice()
+    {
+        Choice = "Left";
+    }
+    private void Equal()
+    {
+        Choice = "Equal";
+    }
+    private void RightClick()
+    {
+        Choice = "Right";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (user.appdata.IsLoggedIn == false)
+            return;
+
+        await LoadComparisons();
+        if (Error == null)
+        {
+            var groups = reviews.GroupBy(n => n.Grouping).ToArray();
+            await RankByGroup(groups, reviews.ToArray());
+            await RankBetweenGroup(groups, reviews.ToArray());
+            await FinishRanking(reviews.ToArray());
+            Finished = true;
+        }
+    }
+
+    private async Task LoadComparisons()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://10.212.171.207:44315/api/Ranking/reviews");
+
+        Console.WriteLine(JsonConvert.SerializeObject(user.appdata));
+
+        request.Content = new StringContent(JsonConvert.SerializeObject(user.appdata), Encoding.UTF8, "application/json");
+        Console.WriteLine(request.Content.ReadAsStringAsync().Result);
+        var client = ClientFactory.CreateClient();
+        using var response = await client.SendAsync(request);
+
+
+        if (response.IsSuccessStatusCode)
+        {
+            var responseStream = await response.Content.ReadAsStringAsync();
+            reviews = JsonConvert.DeserializeObject<List<TextReview>>(responseStream);
+        }
+        else
+        {
+            Error = "Unable to access data. Please try to logout and login again.";
+        }
+    }
+
+    private async Task RankByGroup(IGrouping<int, TextReview>[] groups, TextReview[] revs)
+    {
+        CompareMethod = "Rank By Group";
+        int i = 0;
+        foreach (var group in groups)
+        {
+            var count = group.Count();
+            var total = count * (count - 1);
+            GroupProgress = $"Group {++i}/{groups.Length}";
+
+            while (CheckGroupRankingComplete(group, count) == false)
+            {
+                var min = group.Min(c => c.Comparisons());
+                var mins = group.Where(n => n.Comparisons() == min).ToArray();
+                var r = rng.Next(mins.Length);
+                MethodProgress = $"{group.Sum(c => c.Comparisons())}/{total}";
+                var left = mins[r];
+
+                //Remove the left review and any review that already has a comparison with the left review
+                mins = mins.Where(n => n.Id != left.Id && n.IsCompared(left.Id) == false).ToArray();
+                TextReview right;
+                if (mins.Length > 0)
+                {
+                    r = rng.Next(mins.Length);
+                    right = mins[r];
+                }
+                else
+                {
+                    var reviews = group.Where(n => n.Id != left.Id && n.IsCompared(left.Id) == false).ToArray();
+                    r = rng.Next(reviews.Length);
+                    right = reviews[r];
+                }
+
+                await RankingPair(left, right, revs);
+            }
+        }
+        GroupProgress = "";
+    }
+
+    private async Task RankBetweenGroup(IGrouping<int, TextReview>[] groups, TextReview[] revs)
+    {
+        CompareMethod = "Rank Between Groups";
+        List<TextReview> significantReviews = new();
+
+        foreach (var group in groups)
+            significantReviews.AddRange(GetSignificantReviews(group));
+
+        var total = significantReviews.Count * (significantReviews.Count - 1);
+
+        while (true)
+        {
+            var reviews = CheckSignificantReviewComplete(significantReviews);
+            if (reviews.All(n => n.Count >= reviews.Length - 1)) break;
+
+            var min = reviews.Min(n => n.Count);
+            var mins = reviews.Where(n => n.Count == min).ToArray();
+            var r = rng.Next(mins.Length);
+            MethodProgress = $"{reviews.Sum(n => n.Count)}/{total}";
+            var left = mins[r].review;
+
+            mins = mins.Where(n => n.review.Id != left.Id && n.review.IsCompared(left.Id) == false).ToArray();
+            TextReview right;
+            if (mins.Length > 0)
+            {
+                r = rng.Next(mins.Length);
+                right = mins[r].review;
+            }
+            else
+            {
+                var remaining = reviews.Where(n => n.review.Id != left.Id && n.review.IsCompared(left.Id) == false).ToArray();
+                r = rng.Next(remaining.Length);
+                right = remaining[r].review;
+            }
+
+            await RankingPair(left, right, revs);
+        }
+    }
+
+    private async Task FinishRanking(TextReview[] reviews)
+    {
+        CompareMethod = "Finish Ranking";
+        var totalRankings = reviews.Length * (reviews.Length-1);
+        var total = totalRankings;
+
+        while (true)
+        {
+            var curRankings = reviews.Sum(n => n.Comparisons());
+            MethodProgress = $"{curRankings}/{total}";
+
+            if (curRankings >= totalRankings) break;
+            var min = reviews.Min(n => n.Comparisons());
+
+            var mins = reviews.Where(n => n.Comparisons() == min).ToArray();
+            var r = rng.Next(mins.Length);
+            var left = mins[r];
+
+            mins = mins.Where(n => n.Id != left.Id && n.IsCompared(left.Id) == false).ToArray();
+            TextReview right;
+            if (mins.Length > 0)
+            {
+                r = rng.Next(mins.Length);
+                right = mins[r];
+            }
+            else
+            {
+                var remaining = reviews.Where(n => n.Id != left.Id && n.IsCompared(left.Id) == false).ToArray();
+                r = rng.Next(remaining.Length);
+                right = remaining[r];
+            }
+
+            await RankingPair(left, right, reviews);
+        }
+    }
+
+
+    private bool CheckGroupRankingComplete(IGrouping<int, TextReview>? group, int count)
+    {
+        //Check if the grouping has completed the ranking. Each item will have at least count - 1 rankings
+        var complete = true;
+        foreach (var item in group)
+        {
+            if (item.Comparisons() < count - 1)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static List<TextReview> GetSignificantReviews(IGrouping<int, TextReview>? group)
+    {
+        List<TextReview>
+            reviews = new();
+        var g = group.OrderBy(n => n.BetterReviews.Count()).ToArray();
+        reviews.Add(g[0]);
+        reviews.Add(g[^1]);
+        reviews.Add(g[g.Length / 2]);
+        return reviews;
+    }
+
+    public static (TextReview review, int Count)[] CheckSignificantReviewComplete(List<TextReview> reviews)
+    {
+        return reviews.Select(n => (n, reviews.Where(c => n.IsCompared(c.Id)).Count())).ToArray();
+    }
+
+    private async Task RankingPair(TextReview left, TextReview right, TextReview[] reviews)
+    {
+        Left = left.Review;
+        Right = right.Review;
+
+        Console.WriteLine(Left);
+
+        StateHasChanged();
+
+        while (Choice == null)
+        {
+            await Test();
+        }
+        List<RankingInfo> newData;
+        Comparing = "Comparing";
+        ChoiceMade = true;
+        StateHasChanged();
+        await Task.Delay(1);
+
+        if (Choice == "Equal")
+        {
+            newData = EqualComparison(left, right, reviews);
+        }
+        else if (Choice == "Left")
+        {
+            newData = DifferentComparison(left, right, reviews);
+        }
+        else if (Choice == "Right")
+        {
+            newData = DifferentComparison(right, left, reviews);
+        }
+        else
+        {
+            newData = null;
+            Error = "Unexpected choice value";
+        }
+
+        StateHasChanged();
+        await Task.Delay(1);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://10.212.171.207:44315/api/Ranking/comparisons");
+
+        var rankingData = new RankingData() { appdata = user.appdata, rankingInfos = newData };
+        request.Content = new StringContent(JsonConvert.SerializeObject(rankingData), Encoding.UTF8, "application/json");
+        var client = ClientFactory.CreateClient();
+        using var response = await client.SendAsync(request);
+
+        if (response.IsSuccessStatusCode)
+        {
+            Comparing = "Data is saved";
+        }
+        else
+        {
+            Error = "Failed to save data";
+        }
+
+        StateHasChanged();
+        await Task.Delay(1);
+
+        Choice = null;
+        ChoiceMade = false;
+    }
+
+    private async Task Test()
+    {
+        await Task.Delay(1);
+    }
+
+    public static List<RankingInfo> DifferentComparison(TextReview better, TextReview worse, TextReview[] reviews)
+    {
+        List<RankingInfo> newComparisons = new()
+            {
+                new RankingInfo { ReviewID = better.Id, OtherReviewID = worse.Id, Comparison = "Better" },
+                new RankingInfo { ReviewID = worse.Id, OtherReviewID = better.Id, Comparison = "Worse" }
+            };
+
+        better.WorseReviews.Add(worse.Id);
+        worse.BetterReviews.Add(better.Id);
+
+        var betterReviews = better.EqualReviews.ToList();
+        betterReviews.AddRange(better.BetterReviews);
+        betterReviews.Add(better.Id);
+        var worseReviews = worse.EqualReviews.ToList();
+        worseReviews.AddRange(worse.WorseReviews);
+        worseReviews.Add(worse.Id);
+
+        foreach (var review in betterReviews)
+        {
+            var betRev = reviews.Where(n => n.Id == review).First();
+            foreach (var worseReview in worseReviews)
+            {
+                if (betRev.IsCompared(worseReview) || review == worseReview)
+                    continue;
+                var rev = reviews.Where(n => n.Id == worseReview).First();
+                betRev.WorseReviews.Add(rev.Id);
+                newComparisons.Add(new RankingInfo { ReviewID = betRev.Id, OtherReviewID = rev.Id, Comparison = "Better" });
+                rev.WorseReviews.Add(betRev.Id);
+                newComparisons.Add(new RankingInfo { ReviewID = rev.Id, OtherReviewID = betRev.Id, Comparison = "Worse" });
+            }
+        }
+        return newComparisons;
+    }
+
+    public static List<RankingInfo> EqualComparison(TextReview left, TextReview right, TextReview[] reviews)
+    {
+        List<RankingInfo> newComparisons = new()
+            {
+                new RankingInfo { ReviewID = left.Id, OtherReviewID = right.Id, Comparison = "Equal" },
+                new RankingInfo { ReviewID = right.Id, OtherReviewID = left.Id, Comparison = "Equal" }
+            };
+
+        left.EqualReviews.Add(right.Id);
+        right.EqualReviews.Add(left.Id);
+
+        var worseChars = right.EqualReviews.ToList();
+        worseChars.AddRange(right.WorseReviews);
+        worseChars.Add(right.Id);
+
+        foreach (var cha in left.BetterReviews)
+        {
+            var leftRev = reviews.Where(n => n.Id == cha).First();
+            foreach (var chb in worseChars)
+            {
+                if (leftRev.IsCompared(chb) || cha == chb)
+                    continue;
+                var rightRev = reviews.Where(n => n.Id == chb).First();
+                leftRev.WorseReviews.Add(rightRev.Id);
+                newComparisons.Add(new RankingInfo { ReviewID = leftRev.Id, OtherReviewID = rightRev.Id, Comparison = "Better" });
+                rightRev.WorseReviews.Add(leftRev.Id);
+                newComparisons.Add(new RankingInfo { ReviewID = rightRev.Id, OtherReviewID = leftRev.Id, Comparison = "Worse" });
+            }
+        }
+
+        var lEquals = left.EqualReviews.ToList();
+        lEquals.Add(left.Id);
+        var rEquals = right.EqualReviews.ToList();
+        rEquals.Add(right.Id);
+
+        foreach (var cha in lEquals)
+        {
+            var leftRev = reviews.Where(n => n.Id == cha).First();
+
+
+            foreach (var chb in right.BetterReviews)
+            {
+                if (leftRev.IsCompared(chb) || cha == chb)
+                    continue;
+                var rightRev = reviews.Where(n => n.Id == chb).First();
+                leftRev.WorseReviews.Add(rightRev.Id);
+                newComparisons.Add(new RankingInfo { ReviewID = leftRev.Id, OtherReviewID = rightRev.Id, Comparison = "Worse" });
+                rightRev.WorseReviews.Add(leftRev.Id);
+                newComparisons.Add(new RankingInfo { ReviewID = rightRev.Id, OtherReviewID = leftRev.Id, Comparison = "Better" });
+            }
+            foreach (var chb in rEquals)
+            {
+                if (leftRev.IsCompared(chb) || cha == chb)
+                    continue;
+                var rightRev = reviews.Where(n => n.Id == chb).First();
+                leftRev.WorseReviews.Add(rightRev.Id);
+                newComparisons.Add(new RankingInfo { ReviewID = leftRev.Id, OtherReviewID = rightRev.Id, Comparison = "Equal" });
+                rightRev.WorseReviews.Add(leftRev.Id);
+                newComparisons.Add(new RankingInfo { ReviewID = rightRev.Id, OtherReviewID = leftRev.Id, Comparison = "Equal" });
+            }
+            foreach (var chb in right.WorseReviews)
+            {
+                if (leftRev.IsCompared(chb) || cha == chb)
+                    continue;
+                var rightRev = reviews.Where(n => n.Id == chb).First();
+                leftRev.WorseReviews.Add(rightRev.Id);
+                newComparisons.Add(new RankingInfo { ReviewID = leftRev.Id, OtherReviewID = rightRev.Id, Comparison = "Better" });
+                rightRev.WorseReviews.Add(leftRev.Id);
+                newComparisons.Add(new RankingInfo { ReviewID = rightRev.Id, OtherReviewID = leftRev.Id, Comparison = "Worse" });
+            }
+        }
+
+        var betterChar = right.EqualReviews.ToList();
+        betterChar.AddRange(right.BetterReviews);
+        betterChar.Add(right.Id);
+
+        foreach (var cha in left.WorseReviews)
+        {
+            var leftRev = reviews.Where(n => n.Id == cha).First();
+
+            foreach (var chb in betterChar)
+            {
+                if (leftRev.IsCompared(chb) || cha == chb)
+                    continue;
+                var rightRev = reviews.Where(n => n.Id == chb).First();
+                leftRev.WorseReviews.Add(rightRev.Id);
+                newComparisons.Add(new RankingInfo { ReviewID = leftRev.Id, OtherReviewID = rightRev.Id, Comparison = "Worse" });
+                rightRev.WorseReviews.Add(leftRev.Id);
+                newComparisons.Add(new RankingInfo { ReviewID = rightRev.Id, OtherReviewID = leftRev.Id, Comparison = "Better" });
+            }
+        }
+        return newComparisons;
+    }
+}
+
+<style>
+    .column {
+        float: left;
+        width: 40%;
+    }
+
+    .row:after {
+        content: "";
+        display: table;
+        clear: both;
+    }
+
+    .tArea {
+        height: 600px;
+        width: 100%;
+    }
+
+    .info {
+        width: 20%;
+        text-align: center;
+        display: grid;
+        align-items: center;
+    }
+
+</style>
